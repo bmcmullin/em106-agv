@@ -589,6 +589,33 @@ class AGV :
         self.steerPWM = rcPWM("D10",0)
         self.tractionPWM = rcPWM("D11",1)
 
+    async def servoTest(self):
+        percent = 0
+        await self.lcd.clear()
+        self.lcd.putline(0,"servo test: {:4d}%".format(percent))
+        self.steerPWM.percent = percent
+        while True :
+            self.deadManSwitch.trigger()
+            await self.keypad.keyPressed.wait()
+            self.keypad.keyPressed.clear()
+            key = self.keypad()
+            if key == 'A' :
+                percent = min(percent+1, 100)
+                self.lcd.putline(0,"servo test: {:4d}%".format(percent))
+                self.steerPWM.percent = percent
+            elif key == 'B' :
+                percent = max(percent-1, -100)
+                self.lcd.putline(0,"servo test: {:4d}%".format(percent))
+                self.steerPWM.percent = percent
+            elif key == '*' :
+                self.steerPWM.percent = 0
+                self.lcd.putline(0,"servo test: exit!")
+                await asyncio.sleep(1)
+                return
+            else :
+                # Some other key: ignore!
+                pass
+
     async def optoSensorTest(self):
         await self.lcd.clear()
         self.lcd.putline(0,"optosensors: test")
@@ -650,6 +677,7 @@ class AGV :
         self.lcd.putline(0,"Main menu:   [*: {:d}]".format(star_countdown))
         self.lcd.putline(1,"0: keypad")
         self.lcd.putline(2,"1: optosensor")
+        self.lcd.putline(3,"2: servo")
 
     async def cmdloop(self):
         star_countdown = 3
@@ -665,6 +693,9 @@ class AGV :
                 await self.display_main_menu(star_countdown)
             elif (key == '1') :
                 await self.optoSensorTest()
+                await self.display_main_menu(star_countdown)
+            elif (key == '2') :
+                await self.servoTest()
                 await self.display_main_menu(star_countdown)
             elif (key == '*') :
                 star_countdown -= 1
