@@ -577,16 +577,16 @@ class AGV :
 
     def __init__(self,deadManDelay=60*30):
         self.cmdloop_task = None # Defensive
-        self.deadManSwitch = Delay_ms(duration=deadManDelay*1000)
+        self.deadManSwitch = Delay_ms(duration=deadManDelay*1000) # Defensive
         self.exited = asyncio.Event()
         self.keypad = EKeypad()
+        self.optoSensors = EOptoSensors()
         self.I2C_ADDR = 0x20
         self.LCD_ROWS = 4
         self.LCD_COLS = 20
         self.i2c = I2C(0,scl=Pin("I2C_SCL"), sda=Pin("I2C_SDA"))
         self.mcp = MCP23008(self.i2c, address=self.I2C_ADDR)
         self.lcd = I2cLcd(self.mcp, self.LCD_ROWS, self.LCD_COLS)
-        self.optoSensors = EOptoSensors()
         self.steerPWM = rcPWM("D10",0)
         self.tractionPWM = rcPWM("D11",1)
 
@@ -606,7 +606,7 @@ class AGV :
 
     async def get_duration(self,prompt,duration) :
         await self.lcd.clear()
-        self.lcd.putline(0,"Set {:s}:".format(prompt))
+        self.lcd.putline(0,"{:s}:".format(prompt))
         self.lcd.putline(1,"{:4d} s".format(duration))
         while True :
             self.deadManSwitch.trigger()
@@ -616,7 +616,7 @@ class AGV :
             old_duration = duration
             duration = self.update_duration(duration,key)
             if duration != old_duration :
-                self.lcd.putline(1," {:4d} s".format(duration))
+                self.lcd.putline(1,"{:4d} s".format(duration))
             elif key == '*':
                 return(duration)
             else :
@@ -639,7 +639,7 @@ class AGV :
 
     async def get_percent(self, prompt, percent):
         await self.lcd.clear()
-        self.lcd.putline(0,"Set {:s}:".format(prompt))
+        self.lcd.putline(0,"{:s} : ".format(prompt))
         self.lcd.putline(1,"{:4d}%".format(percent))
         while True :
             self.deadManSwitch.trigger()
@@ -649,17 +649,80 @@ class AGV :
             old_percent = percent
             percent = self.update_percent(percent,key)
             if percent != old_percent :
-                self.lcd.putline(1," {:4d}%".format(percent))
+                self.lcd.putline(1,"{:4d}%".format(percent))
             elif key == '*':
                 return(percent)
             else :
                 # ignore other key values
                 pass
 
+    async def autoSteer(self, traction_percent, steer_gain, stopLineEvent) :
+        steer_percent = 0
+        self.steerPWM.percent = steer_percent
+        self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
+        left = self.optoSensors.left
+        right = self.optoSensors.right
+        self.lcd.putline(3,"Left: {:d}   ".format(left()))
+        self.lcd.putstr("Right: {:d}".format(right()))
+        while True :
+            self.deadManSwitch.trigger()
+            event = await WaitAny((
+                left.close, left.open,
+                right.close, right.open)).wait()
+            event.clear()
+            if event is left.close :
+                self.lcd.move_to(6,3)
+                self.lcd.putchar("{:d}".format(left()))
+                steer_percent += steer_gain
+                self.steerPWM.percent = steer_percent
+            elif event is left.open :
+                self.lcd.move_to(6,3)
+                self.lcd.putchar("{:d}".format(left()))
+                steer_percent -= steer_gain
+                self.steerPWM.percent = steer_percent
+            elif event is right.close :
+                self.lcd.move_to(17,3)
+                self.lcd.putchar("{:d}".format(right()))
+                steer_percent -= steer_gain
+                self.steerPWM.percent = steer_percent
+            elif event is right.open :
+                self.lcd.move_to(17,3)
+                self.lcd.putchar("{:d}".format(right()))
+                steer_percent += steer_gain
+                self.steerPWM.percent = steer_percent
+            else :
+                # Can't happen: should really raise an exception?
+                pass
+            if (left() == 1) and (right() == 1) : # STOP LINE
+                stopLineEvent.set()
+                self.steerPWM.percent = 0
+                return # Exit autoSteer
+
+    def lineTest(self,traction_percent,steer_gain) :
+        traction_percent = await self.get_percent("Line tst tract",traction_percent)
+        steer_gain = await self.get_percent("Line tst gain",traction_percent)
+        await self.lcd.clear()
+        self.lcd.putline(0,"Line test")
+        self.lcd.putline(1,"Running [{:d}, {:d}]".format(traction_percent,steer_gain))
+        stopLineEvent = asyncio.Event()
+        autoSteerTask = asyncio.create_task(
+            self.autoSteer(traction_percent, steer_gain, stopLineEvent))
+        self.tractionPWM.percent = traction_percent
+        event = await WaitAny((stopLineEvent,self.keypad.keyPressed)).wait()
+        event.clear()
+        self.tractionPWM.percent = 0
+        if event is stopLineEvent :
+            self.lcd.putline(1,"Completed...")
+        else :
+            self.lcd.putline(3,"Aborted by key!")
+            self.steerPWM.percent = 0
+            autoSteerTask.cancel()
+        await asyncio.sleep(2)
+
     def circleTest(self,steer_percent,traction_percent,duration) :
-        steer_percent = await self.get_percent("Circ tst steer:",steer_percent)
-        traction_percent = await self.get_percent("Circ tst tract:",traction_percent)
-        duration = await self.get_duration("Circ tst duration:",duration)
+        steer_percent = await self.get_percent("Circ tst steer",steer_percent)
+        traction_percent = await self.get_percent("Circ tst tract",traction_percent)
+        duration = await self.get_duration("Circ tst duration",duration)
         await self.lcd.clear()
         self.lcd.putline(0,"Circle Test")
         self.lcd.putline(1,"Running...")
@@ -675,7 +738,7 @@ class AGV :
         if event is delay :
             self.lcd.putline(1,"Completed...")
         else :
-            self.lcd.putline(3,"Aborted by key!")
+            self.lcd.putline(1,"Aborted by key!")
         await asyncio.sleep(2)
 
     async def pwmTest(self,pwmname,pwm):
@@ -707,7 +770,7 @@ class AGV :
         self.lcd.putline(0,"optosensors: test")
         left = self.optoSensors.left()
         self.lcd.putline(1,"Left:  {:d}".format(left))
-        right = self.optoSensors.left()
+        right = self.optoSensors.right()
         self.lcd.putline(2,"Right: {:d}".format(right))
         while True :
             self.deadManSwitch.trigger()
@@ -762,7 +825,7 @@ class AGV :
         await self.lcd.clear()
         self.lcd.putline(0,"0: keypad 1: opto")
         self.lcd.putline(1,"2: servo  3: tract")
-        self.lcd.putline(2,"4: circle")
+        self.lcd.putline(2,"4: circle 5: line")
         self.lcd.move_to(11,3)
         self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
@@ -789,6 +852,9 @@ class AGV :
                 await self.display_main_menu(star_countdown)
             elif (key == '4') :
                 await self.circleTest(0,0,0)
+                await self.display_main_menu(star_countdown)
+            elif (key == '5') :
+                await self.lineTest(30,30)
                 await self.display_main_menu(star_countdown)
             elif (key == '*') :
                 star_countdown -= 1
