@@ -576,6 +576,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,deadManDelay=60*30):
+        self.__version__ = "0.1"
         self.cmdloop_task = None # Defensive
         self.deadManSwitch = Delay_ms(duration=deadManDelay*1000) # Defensive
         self.exited = asyncio.Event()
@@ -871,8 +872,14 @@ class AGV :
                 self.exited.set()
                 return
 
+    async def splash(self):
+        self.lcd.putline(1,"   pyAGV  v {:s}".format(self.__version__))
+        self.lcd.putline(2,"   Starting ...")
+        await asyncio.sleep(4)
+
     async def startup(self):
         await self.lcd.startup()
+        await self.splash()
         self.deadManSwitch.trigger() # Regularly retrigger to stay running
         self.cmdloop_task = asyncio.create_task(self.cmdloop())
 
