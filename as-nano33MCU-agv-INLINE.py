@@ -576,7 +576,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,deadManDelay=60*30):
-        self.__version__ = "0.1"
+        self.__version__ = "0.1dev"
         self.cmdloop_task = None # Defensive
         self.deadManSwitch = Delay_ms(duration=deadManDelay*1000) # Defensive
         self.exited = asyncio.Event()
@@ -827,7 +827,7 @@ class AGV :
         self.lcd.putline(0,"0: keypad 1: opto")
         self.lcd.putline(1,"2: servo  3: tract")
         self.lcd.putline(2,"4: circle 5: line")
-        self.lcd.move_to(11,3)
+        self.lcd.move_to(14,3)
         self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
     async def cmdloop(self):
@@ -841,29 +841,40 @@ class AGV :
 
             if (key == '0') :
                 await self.keypadTest()
+                star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '1') :
                 await self.optoSensorTest()
+                star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '2') :
                 await self.pwmTest("servo",self.steerPWM)
+                star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '3') :
                 await self.pwmTest("tract",self.tractionPWM)
+                star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '4') :
                 await self.circleTest(0,0,0)
+                star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '5') :
                 await self.lineTest(30,30)
+                star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '*') :
                 star_countdown -= 1
-                await self.display_main_menu(star_countdown)
+                self.lcd.move_to(14,3)
+                self.lcd.putstr("[*: {:d}]".format(star_countdown))
+                self.lcd.move_to(0,3)
+                self.lcd.putstr("            ".format(key))
             else :
+                self.lcd.move_to(0,3)
+                self.lcd.putstr("{:s}: not valid".format(key))
                 star_countdown = 3
-                await self.display_main_menu(star_countdown)
-                self.lcd.putline(3,"{:s}: not valid".format(key))
+                self.lcd.move_to(14,3)
+                self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
             if star_countdown == 0 :
                 self.lcd.putline(3,"exiting...")
@@ -874,8 +885,9 @@ class AGV :
 
     async def splash(self):
         self.lcd.putline(1,"   pyAGV  v {:s}".format(self.__version__))
-        self.lcd.putline(2,"   Starting ...")
-        await asyncio.sleep(4)
+        self.lcd.putline(2," (any key to start)")
+        await self.keypad.keyPressed.wait()
+        self.keypad.keyPressed.clear()
 
     async def startup(self):
         await self.lcd.startup()
