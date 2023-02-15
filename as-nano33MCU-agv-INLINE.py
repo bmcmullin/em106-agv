@@ -5,6 +5,7 @@
 # Libraries INLINE for dev/test purposes in OpenMV IDE only.
 
 import time
+import sys
 
 import uasyncio as asyncio
 from primitives import Delay_ms, WaitAny, ESwitch
@@ -589,6 +590,94 @@ class AGV :
         self.steerPWM = rcPWM("D10",0)
         self.tractionPWM = rcPWM("D11",1)
 
+    def update_duration(self,duration,key):
+        if key == 'A' :
+            duration += 1
+        elif key == 'B' :
+            duration = max(duration-1,0)
+        elif key == 'C' :
+            duration += 10
+        elif key == 'D' :
+            duration = max(duration-10,0)
+        else :
+            # ignore other key values
+            pass
+        return duration
+
+    async def get_duration(self,prompt,duration) :
+        await self.lcd.clear()
+        self.lcd.putline(0,"Set {:s}:".format(prompt))
+        self.lcd.putline(1,"{:4d} s".format(duration))
+        while True :
+            self.deadManSwitch.trigger()
+            await self.keypad.keyPressed.wait()
+            self.keypad.keyPressed.clear()
+            key = self.keypad()
+            old_duration = duration
+            duration = self.update_duration(duration,key)
+            if duration != old_duration :
+                self.lcd.putline(1," {:4d} s".format(duration))
+            elif key == '*':
+                return(duration)
+            else :
+                # ignore other key values
+                pass
+
+    def update_percent(self,percent,key):
+        if key == 'A' :
+            percent = min(percent+1, 100)
+        elif key == 'B' :
+            percent = max(percent-1, -100)
+        elif key == 'C' :
+            percent = min(percent+10, 100)
+        elif key == 'D' :
+            percent = max(percent-10, -100)
+        else :
+            # ignore other key values
+            pass
+        return percent
+
+    async def get_percent(self, prompt, percent):
+        await self.lcd.clear()
+        self.lcd.putline(0,"Set {:s}:".format(prompt))
+        self.lcd.putline(1,"{:4d}%".format(percent))
+        while True :
+            self.deadManSwitch.trigger()
+            await self.keypad.keyPressed.wait()
+            self.keypad.keyPressed.clear()
+            key = self.keypad()
+            old_percent = percent
+            percent = self.update_percent(percent,key)
+            if percent != old_percent :
+                self.lcd.putline(1," {:4d}%".format(percent))
+            elif key == '*':
+                return(percent)
+            else :
+                # ignore other key values
+                pass
+
+    def circleTest(self,steer_percent,traction_percent,duration) :
+        steer_percent = await self.get_percent("Circ tst steer:",steer_percent)
+        traction_percent = await self.get_percent("Circ tst tract:",traction_percent)
+        duration = await self.get_duration("Circ tst duration:",duration)
+        await self.lcd.clear()
+        self.lcd.putline(0,"Circle Test")
+        self.lcd.putline(1,"Running...")
+        self.steerPWM.percent = steer_percent
+        self.tractionPWM.percent = traction_percent
+        delay = Delay_ms(duration=duration*1000)
+        delay.trigger()
+        event = await WaitAny((delay,self.keypad.keyPressed)).wait()
+        event.clear()
+        self.deadManSwitch.trigger()
+        self.tractionPWM.percent = 0
+        self.steerPWM.percent = 0
+        if event is delay :
+            self.lcd.putline(1,"Completed...")
+        else :
+            self.lcd.putline(3,"Aborted by key!")
+        await asyncio.sleep(2)
+
     async def pwmTest(self,pwmname,pwm):
         percent = 0
         await self.lcd.clear()
@@ -599,20 +688,9 @@ class AGV :
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
-            if key == 'A' :
-                percent = min(percent+1, 100)
-                self.lcd.putline(0,"{:s} test: {:4d}%".format(pwmname,percent))
-                pwm.percent = percent
-            elif key == 'B' :
-                percent = max(percent-1, -100)
-                self.lcd.putline(0,"{:s} test: {:4d}%".format(pwmname,percent))
-                pwm.percent = percent
-            if key == 'C' :
-                percent = min(percent+10, 100)
-                self.lcd.putline(0,"{:s} test: {:4d}%".format(pwmname,percent))
-                pwm.percent = percent
-            elif key == 'D' :
-                percent = max(percent-10, -100)
+            old_percent = percent
+            percent = self.update_percent(percent,key)
+            if percent != old_percent :
                 self.lcd.putline(0,"{:s} test: {:4d}%".format(pwmname,percent))
                 pwm.percent = percent
             elif key == '*' :
@@ -684,6 +762,7 @@ class AGV :
         await self.lcd.clear()
         self.lcd.putline(0,"0: keypad 1: opto")
         self.lcd.putline(1,"2: servo  3: tract")
+        self.lcd.putline(2,"4: circle")
         self.lcd.move_to(11,3)
         self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
@@ -707,6 +786,9 @@ class AGV :
                 await self.display_main_menu(star_countdown)
             elif (key == '3') :
                 await self.pwmTest("tract",self.tractionPWM)
+                await self.display_main_menu(star_countdown)
+            elif (key == '4') :
+                await self.circleTest(0,0,0)
                 await self.display_main_menu(star_countdown)
             elif (key == '*') :
                 star_countdown -= 1
