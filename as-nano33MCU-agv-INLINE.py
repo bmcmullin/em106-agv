@@ -577,8 +577,7 @@ class AGV :
 
     def __init__(self,deadManDelay=60*30):
         self.__version__ = "0.1dev"
-        self.cmdloop_task = None # Defensive
-        self.deadManSwitch = Delay_ms(duration=deadManDelay*1000) # Defensive
+        self.deadManSwitch = Delay_ms(duration=deadManDelay*1000)
         self.exited = asyncio.Event()
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
@@ -699,7 +698,7 @@ class AGV :
                 self.steerPWM.percent = 0
                 return # Exit autoSteer
 
-    def lineTest(self,traction_percent,steer_gain) :
+    def lineTest(self,traction_percent=30,steer_gain=30) :
         traction_percent = await self.get_percent("Line tst tract",traction_percent)
         steer_gain = await self.get_percent("Line tst gain",traction_percent)
         await self.lcd.clear()
@@ -720,7 +719,7 @@ class AGV :
             autoSteerTask.cancel()
         await asyncio.sleep(2)
 
-    def circleTest(self,steer_percent,traction_percent,duration) :
+    def circleTest(self,steer_percent=0,traction_percent=0,duration=10) :
         steer_percent = await self.get_percent("Circ tst steer",steer_percent)
         traction_percent = await self.get_percent("Circ tst tract",traction_percent)
         duration = await self.get_duration("Circ tst duration",duration)
@@ -856,11 +855,11 @@ class AGV :
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '4') :
-                await self.circleTest(0,0,0)
+                await self.circleTest()
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '5') :
-                await self.lineTest(30,30)
+                await self.lineTest()
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '*') :
@@ -877,10 +876,9 @@ class AGV :
                 self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
             if star_countdown == 0 :
-                self.lcd.putline(3,"exiting...")
-                await asyncio.sleep(2)
                 await self.lcd.clear()
-                self.exited.set()
+                self.lcd.putline(1,"(pyAGV exit)")
+                await asyncio.sleep(2)
                 return
 
     async def splash(self):
@@ -889,19 +887,20 @@ class AGV :
         await self.keypad.keyPressed.wait()
         self.keypad.keyPressed.clear()
 
-    async def startup(self):
+    async def run(self):
+        self.deadManSwitch.trigger()  # Regularly retrigger to stay running
         await self.lcd.startup()
         await self.splash()
-        self.deadManSwitch.trigger() # Regularly retrigger to stay running
-        self.cmdloop_task = asyncio.create_task(self.cmdloop())
+        await self.cmdloop()
+        self.exited.set() # User requested exit?
 
 # standalone test: remove from module version?
 
 async def main():
     print("initialising agv obj...")
-    agv = AGV(deadManDelay=60)
+    agv = AGV(deadManDelay=60*60) # 1 hour
     print("starting up agv...")
-    await agv.startup()
+    agv_task = asyncio.create_task(agv.run())
     print("awaiting exit event...")
     event = await WaitAny((agv.exited, agv.deadManSwitch)).wait()
     if event is agv.exited :
@@ -909,6 +908,8 @@ async def main():
     elif event is agv.deadManSwitch:
         print("deadManSwitch detected...")
         await agv.lcd.clear()
+        agv.lcd.putline(0,"deadManSwitch!")
+        agv.lcd.putline(1,"(pyAGV abort)")
     else :
         print("exiting for no known reason? (CAN'T HAPPEN!)")
 
