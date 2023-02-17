@@ -565,7 +565,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,deadManDelay=60*30):
-        self.__version__ = "0.0.1rc"
+        self.__version__ = "0.1rc"
         self.deadManSwitch = Delay_ms(duration=deadManDelay*1000)
         self.exited = asyncio.Event()
         self.keypad = EKeypad()
