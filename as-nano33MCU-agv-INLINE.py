@@ -657,42 +657,55 @@ class AGV :
                 pass
 
     async def autoSteer(self, traction_percent, steer_gain, stopLineEvent) :
-        steer_percent = 0
-        self.steerPWM.percent = steer_percent
-        self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
+        steer_map = [
+          [0, +1],
+          [-1, 0]]
         left = self.optoSensors.left
         right = self.optoSensors.right
-        self.lcd.putline(3,"Left: {:d}   ".format(left()))
-        self.lcd.putstr("Right: {:d}".format(right()))
+        l_state = left()
+        r_state = right()
+        self.lcd.putline(3,"Left: {:d}   ".format(l_state))
+        self.lcd.putstr("Right: {:d}".format(r_state))
+        steer_percent = steer_map[l_state][r_state]*steer_gain
+        self.steerPWM.percent = steer_percent
+        self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
         while True :
             self.deadManSwitch.trigger()
             event = await WaitAny((
                 left.close, left.open,
                 right.close, right.open)).wait()
             event.clear()
-            if event is left.close :
-                self.lcd.move_to(6,3)
-                self.lcd.putchar("{:d}".format(left()))
-                steer_percent += steer_gain
-                self.steerPWM.percent = steer_percent
-            elif event is left.open :
-                self.lcd.move_to(6,3)
-                self.lcd.putchar("{:d}".format(left()))
-                steer_percent -= steer_gain
-                self.steerPWM.percent = steer_percent
-            elif event is right.close :
-                self.lcd.move_to(17,3)
-                self.lcd.putchar("{:d}".format(right()))
-                steer_percent -= steer_gain
-                self.steerPWM.percent = steer_percent
-            elif event is right.open :
-                self.lcd.move_to(17,3)
-                self.lcd.putchar("{:d}".format(right()))
-                steer_percent += steer_gain
-                self.steerPWM.percent = steer_percent
-            else :
-                # Can't happen: should really raise an exception?
-                pass
+            l_state = left()
+            r_state = right()
+            self.lcd.putline(3,"Left: {:d}   ".format(l_state))
+            self.lcd.putstr("Right: {:d}".format(r_state))
+            steer_percent = steer_map[l_state][r_state]*steer_gain
+            self.steerPWM.percent = steer_percent
+            self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
+
+            #if event is left.close :
+                #self.lcd.move_to(6,3)
+                #self.lcd.putchar("{:d}".format(left()))
+                #steer_percent -= steer_gain
+                #self.steerPWM.percent = steer_percent
+            #elif event is left.open :
+                #self.lcd.move_to(6,3)
+                #self.lcd.putchar("{:d}".format(left()))
+                #steer_percent += steer_gain
+                #self.steerPWM.percent = steer_percent
+            #elif event is right.close :
+                #self.lcd.move_to(17,3)
+                #self.lcd.putchar("{:d}".format(right()))
+                #steer_percent += steer_gain
+                #self.steerPWM.percent = steer_percent
+            #elif event is right.open :
+                #self.lcd.move_to(17,3)
+                #self.lcd.putchar("{:d}".format(right()))
+                #steer_percent -= steer_gain
+                #self.steerPWM.percent = steer_percent
+            #else :
+                ## Can't happen: should really raise an exception?
+                #pass
             if (left() == 1) and (right() == 1) : # STOP LINE
                 stopLineEvent.set()
                 self.steerPWM.percent = 0
@@ -779,15 +792,19 @@ class AGV :
                 self.optoSensors.right.close, self.optoSensors.right.open,
                 self.keypad.keyPressed)).wait()
             event.clear()
-            if event is self.optoSensors.left.close :
-                self.lcd.putline(1,"Left:  0")
-            elif event is self.optoSensors.left.open :
-                self.lcd.putline(1,"Left:  1")
-            elif event is self.optoSensors.right.close :
-                self.lcd.putline(2,"Right: 0")
-            elif event is self.optoSensors.right.open :
-                self.lcd.putline(2,"Right: 1")
-            elif event is self.keypad.keyPressed :
+            self.lcd.putline(1,"Left:  {:d}".format(self.optoSensors.left()))
+            self.lcd.putline(2,"Right: {:d}".format(self.optoSensors.right()))
+
+            #if event is self.optoSensors.left.close :
+                #self.lcd.putline(1,"Left:  0")
+            #elif event is self.optoSensors.left.open :
+                #self.lcd.putline(1,"Left:  1")
+            #elif event is self.optoSensors.right.close :
+                #self.lcd.putline(2,"Right: 0")
+            #elif event is self.optoSensors.right.open :
+                #self.lcd.putline(2,"Right: 1")
+            #elif
+            if event is self.keypad.keyPressed :
                 self.lcd.putline(0,"optosensors: exit")
                 await asyncio.sleep(1)
                 return
