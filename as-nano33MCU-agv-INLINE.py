@@ -662,11 +662,11 @@ class AGV :
           [-1, 0]]
         left = self.optoSensors.left
         right = self.optoSensors.right
-        l_state = left()
-        r_state = right()
-        self.lcd.putline(3,"Left: {:d}   ".format(l_state))
-        self.lcd.putstr("Right: {:d}".format(r_state))
-        steer_percent = steer_map[l_state][r_state]*steer_gain
+        left_state = left()
+        right_state = right()
+        self.lcd.putline(3,"Left: {:d}   ".format(left_state))
+        self.lcd.putstr("Right: {:d}".format(right_state))
+        steer_percent = steer_map[left_state][right_state]*steer_gain
         self.steerPWM.percent = steer_percent
         self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
         while True :
@@ -675,37 +675,14 @@ class AGV :
                 left.close, left.open,
                 right.close, right.open)).wait()
             event.clear()
-            l_state = left()
-            r_state = right()
-            self.lcd.putline(3,"Left: {:d}   ".format(l_state))
-            self.lcd.putstr("Right: {:d}".format(r_state))
-            steer_percent = steer_map[l_state][r_state]*steer_gain
+            left_state = left()
+            right_state = right()
+            self.lcd.putline(3,"Left: {:d}   ".format(left_state))
+            self.lcd.putstr("Right: {:d}".format(right_state))
+            steer_percent = steer_map[left_state][right_state]*steer_gain
             self.steerPWM.percent = steer_percent
             self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
 
-            #if event is left.close :
-                #self.lcd.move_to(6,3)
-                #self.lcd.putchar("{:d}".format(left()))
-                #steer_percent -= steer_gain
-                #self.steerPWM.percent = steer_percent
-            #elif event is left.open :
-                #self.lcd.move_to(6,3)
-                #self.lcd.putchar("{:d}".format(left()))
-                #steer_percent += steer_gain
-                #self.steerPWM.percent = steer_percent
-            #elif event is right.close :
-                #self.lcd.move_to(17,3)
-                #self.lcd.putchar("{:d}".format(right()))
-                #steer_percent += steer_gain
-                #self.steerPWM.percent = steer_percent
-            #elif event is right.open :
-                #self.lcd.move_to(17,3)
-                #self.lcd.putchar("{:d}".format(right()))
-                #steer_percent -= steer_gain
-                #self.steerPWM.percent = steer_percent
-            #else :
-                ## Can't happen: should really raise an exception?
-                #pass
             if (left() == 1) and (right() == 1) : # STOP LINE
                 stopLineEvent.set()
                 self.steerPWM.percent = 0
@@ -730,6 +707,17 @@ class AGV :
             self.lcd.putline(3,"Aborted by key!")
             self.steerPWM.percent = 0
             autoSteerTask.cancel()
+        await asyncio.sleep(2)
+
+    def turnTest(self,traction_percent=30,steer_gain=30) :
+        #traction_percent = await self.get_percent("Line tst tract",traction_percent)
+        #steer_gain = await self.get_percent("Line tst gain",traction_percent)
+        await self.lcd.clear()
+        self.lcd.putline(0,"Multi-pt turn test")
+        self.lcd.putline(1,"NOT IMPLEMENTED")
+        await asyncio.sleep(2)
+        self.lcd.putline(2,"Exit...")
+        #self.lcd.putline(1,"Running [{:d}, {:d}]".format(traction_percent,steer_gain))
         await asyncio.sleep(2)
 
     def circleTest(self,steer_percent=0,traction_percent=0,duration=10) :
@@ -771,8 +759,8 @@ class AGV :
                 pwm.percent = percent
             elif key == '*' :
                 pwm.percent = 0
-                self.lcd.putline(0,"{:s} test: exit!".format(pwmname))
-                await asyncio.sleep(1)
+                self.lcd.putline(0,"{:s} test: exit...".format(pwmname))
+                await asyncio.sleep(2)
                 return
             else :
                 # Some other key: ignore!
@@ -781,10 +769,10 @@ class AGV :
     async def optoSensorTest(self):
         await self.lcd.clear()
         self.lcd.putline(0,"optosensors: test")
-        left = self.optoSensors.left()
-        self.lcd.putline(1,"Left:  {:d}".format(left))
-        right = self.optoSensors.right()
-        self.lcd.putline(2,"Right: {:d}".format(right))
+        left_state = self.optoSensors.left()
+        self.lcd.putline(1,"Left:  {:d}".format(left_state))
+        right_state = self.optoSensors.right()
+        self.lcd.putline(2,"Right: {:d}".format(right_state))
         while True :
             self.deadManSwitch.trigger()
             event = await WaitAny((
@@ -792,21 +780,13 @@ class AGV :
                 self.optoSensors.right.close, self.optoSensors.right.open,
                 self.keypad.keyPressed)).wait()
             event.clear()
-            self.lcd.putline(1,"Left:  {:d}".format(self.optoSensors.left()))
-            self.lcd.putline(2,"Right: {:d}".format(self.optoSensors.right()))
-
-            #if event is self.optoSensors.left.close :
-                #self.lcd.putline(1,"Left:  0")
-            #elif event is self.optoSensors.left.open :
-                #self.lcd.putline(1,"Left:  1")
-            #elif event is self.optoSensors.right.close :
-                #self.lcd.putline(2,"Right: 0")
-            #elif event is self.optoSensors.right.open :
-                #self.lcd.putline(2,"Right: 1")
-            #elif
+            left_state = self.optoSensors.left()
+            self.lcd.putline(1,"Left:  {:d}".format(left_state))
+            right_state = self.optoSensors.right()
+            self.lcd.putline(2,"Right: {:d}".format(right_state))
             if event is self.keypad.keyPressed :
-                self.lcd.putline(0,"optosensors: exit")
-                await asyncio.sleep(1)
+                self.lcd.putline(0,"optosensors: exit...")
+                await asyncio.sleep(2)
                 return
             else :
                 # Can't happen: should really raise an exception?
@@ -814,15 +794,19 @@ class AGV :
 
     def display_key_press(self, star_countdown):
         self.lcd.move_to(14,0)
-        self.lcd.putline(0,"Keypad test: [*: {:d}]".format(star_countdown))
+        self.lcd.putline(0,"Keypad test:")
         self.lcd.putline(1,"activeRow: {:d}".format(self.keypad.activeRow))
         self.lcd.putline(2,"activeCol: {:d}".format(self.keypad.activeCol))
-        self.lcd.putline(3,'keyPressed: "{:s}"'.format(self.keypad()))
+        self.lcd.putline(3,'key code: "{:s}"'.format(self.keypad()))
+        self.lcd.move_to(14,3)
+        self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
     async def keypadTest(self):
         star_countdown = 3
         await self.lcd.clear()
-        self.lcd.putline(0,"Keypad test: [*: {:d}]".format(star_countdown))
+        self.lcd.putline(0,"Keypad test:")
+        self.lcd.move_to(14,3)
+        self.lcd.putstr("[*: {:d}]".format(star_countdown))
         while True :
             self.deadManSwitch.trigger()
             await self.keypad.keyPressed.wait()
@@ -834,15 +818,16 @@ class AGV :
                 star_countdown = 3
             self.display_key_press(star_countdown)
             if star_countdown == 0 :
-                self.lcd.putline(0,"keypad test: exit!")
-                await asyncio.sleep(1)
+                self.lcd.putline(0,"keypad test: exit...")
+                await asyncio.sleep(2)
                 return
 
     async def display_main_menu(self, star_countdown):
         await self.lcd.clear()
-        self.lcd.putline(0,"0: keypad 1: opto")
-        self.lcd.putline(1,"2: servo  3: tract")
-        self.lcd.putline(2,"4: circle 5: line")
+        self.lcd.putline(0,"1: keypad 2: opto")
+        self.lcd.putline(1,"3: servo  4: tract")
+        self.lcd.putline(2,"5: circle 6: line")
+        self.lcd.putline(3,"7: turn")
         self.lcd.move_to(14,3)
         self.lcd.putstr("[*: {:d}]".format(star_countdown))
 
@@ -855,28 +840,32 @@ class AGV :
             self.deadManSwitch.trigger()
             key = self.keypad()
 
-            if (key == '0') :
+            if (key == '1') :
                 await self.keypadTest()
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
-            elif (key == '1') :
+            elif (key == '2') :
                 await self.optoSensorTest()
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
-            elif (key == '2') :
+            elif (key == '3') :
                 await self.pwmTest("servo",self.steerPWM)
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
-            elif (key == '3') :
+            elif (key == '4') :
                 await self.pwmTest("tract",self.tractionPWM)
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
-            elif (key == '4') :
+            elif (key == '5') :
                 await self.circleTest()
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
-            elif (key == '5') :
+            elif (key == '6') :
                 await self.lineTest()
+                star_countdown = 3
+                await self.display_main_menu(star_countdown)
+            elif (key == '7') :
+                await self.turnTest()
                 star_countdown = 3
                 await self.display_main_menu(star_countdown)
             elif (key == '*') :
@@ -891,6 +880,9 @@ class AGV :
                 star_countdown = 3
                 self.lcd.move_to(14,3)
                 self.lcd.putstr("[*: {:d}]".format(star_countdown))
+                await asyncio.sleep(2)
+                self.lcd.move_to(0,3)
+                self.lcd.putstr("7: turns    ")
 
             if star_countdown == 0 :
                 await self.lcd.clear()
