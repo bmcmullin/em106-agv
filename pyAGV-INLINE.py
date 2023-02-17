@@ -509,28 +509,20 @@ class I2cLcd(LcdApi):
 
     async def reset(self) : # Slow: use as awaitable
         await asyncio.sleep_ms(20)   # Allow LCD time to powerup
-        #time.sleep_ms(20)
-        # Send reset 3 times
         self.hal_write_init_nibble(self.LCD_FUNCTION_RESET)
         await asyncio.sleep_ms(5)    # Need to delay at least 4.1 msec
-        #time.sleep_ms(5)
         self.hal_write_init_nibble(self.LCD_FUNCTION_RESET)
         await asyncio.sleep_ms(1)
-        #time.sleep_ms(1)
         self.hal_write_init_nibble(self.LCD_FUNCTION_RESET)
         await asyncio.sleep_ms(1)
-        #time.sleep_ms(1)
-        # Put LCD into 4-bit mode
         self.hal_write_init_nibble(self.LCD_FUNCTION)
         await asyncio.sleep_ms(1)
-        #time.sleep_ms(1)
         cmd = self.LCD_FUNCTION
         if self.num_lines > 1:
             cmd |= self.LCD_FUNCTION_2LINES
         self.hal_write_command(cmd)
         await LcdApi.reset(self)
         print("lcd.reset() completing...")
-        #gc.collect()
 
     def hal_write_init_nibble(self, nibble):
         # Writes an initialization nibble to the LCD.
@@ -538,7 +530,6 @@ class I2cLcd(LcdApi):
         byte = ((nibble >> 4) & 0x0f) << SHIFT_DATA
         self.mcp.GPIO = bytes([byte | MASK_E])
         self.mcp.GPIO = bytes([byte])
-        #gc.collect()
 
     def hal_write_command(self, cmd):
         # Write a command to the LCD. Data is latched on the falling edge of E.
@@ -554,7 +545,6 @@ class I2cLcd(LcdApi):
             #await asyncio.sleep_ms(5)
             #time.sleep_ms(5)
             #print("...done")
-        #gc.collect()
 
     def hal_write_data(self, data):
         # Write data to the LCD. Data is latched on the falling edge of E.
@@ -566,7 +556,6 @@ class I2cLcd(LcdApi):
                 ((data & 0x0f) << SHIFT_DATA))
         self.mcp.GPIO = bytes([byte | MASK_E])
         self.mcp.GPIO = bytes([byte])
-        #gc.collect()
 
 ## from em106-AGV import AGV.py?
 ## INLINE for test purposes
@@ -576,7 +565,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,deadManDelay=60*30):
-        self.__version__ = "0.1dev"
+        self.__version__ = "0.0.1rc"
         self.deadManSwitch = Delay_ms(duration=deadManDelay*1000)
         self.exited = asyncio.Event()
         self.keypad = EKeypad()
@@ -690,7 +679,7 @@ class AGV :
 
     def lineTest(self,traction_percent=30,steer_gain=30) :
         traction_percent = await self.get_percent("Line tst tract",traction_percent)
-        steer_gain = await self.get_percent("Line tst gain",traction_percent)
+        steer_gain = await self.get_percent("Line tst gain",steer_gain)
         await self.lcd.clear()
         self.lcd.putline(0,"Line test")
         self.lcd.putline(1,"Running [{:d}, {:d}]".format(traction_percent,steer_gain))
