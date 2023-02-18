@@ -564,9 +564,8 @@ class AGV :
 
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
-    def __init__(self,deadManDelay=60*30):
+    def __init__(self,splashQuitTimeout=30):
         self.__version__ = "0.1rc"
-        self.deadManSwitch = Delay_ms(duration=deadManDelay*1000)
         self.exited = asyncio.Event()
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
@@ -598,7 +597,6 @@ class AGV :
         self.lcd.putline(0,"{:s}:".format(prompt))
         self.lcd.putline(1,"{:4d} s".format(duration))
         while True :
-            self.deadManSwitch.trigger()
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
@@ -631,7 +629,6 @@ class AGV :
         self.lcd.putline(0,"{:s} : ".format(prompt))
         self.lcd.putline(1,"{:4d}%".format(percent))
         while True :
-            self.deadManSwitch.trigger()
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
@@ -659,7 +656,6 @@ class AGV :
         self.steerPWM.percent = steer_percent
         self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
         while True :
-            self.deadManSwitch.trigger()
             event = await WaitAny((
                 left.close, left.open,
                 right.close, right.open)).wait()
@@ -722,7 +718,6 @@ class AGV :
         delay.trigger()
         event = await WaitAny((delay,self.keypad.keyPressed)).wait()
         event.clear()
-        self.deadManSwitch.trigger()
         self.tractionPWM.percent = 0
         self.steerPWM.percent = 0
         if event is delay :
@@ -737,7 +732,6 @@ class AGV :
         self.lcd.putline(0,"{:s} test: {:4d}%".format(pwmname,percent))
         pwm.percent = percent
         while True :
-            self.deadManSwitch.trigger()
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
@@ -763,7 +757,6 @@ class AGV :
         right_state = self.optoSensors.right()
         self.lcd.putline(2,"Right: {:d}".format(right_state))
         while True :
-            self.deadManSwitch.trigger()
             event = await WaitAny((
                 self.optoSensors.left.close, self.optoSensors.left.open,
                 self.optoSensors.right.close, self.optoSensors.right.open,
@@ -797,7 +790,6 @@ class AGV :
         self.lcd.move_to(14,3)
         self.lcd.putstr("[*: {:d}]".format(star_countdown))
         while True :
-            self.deadManSwitch.trigger()
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
@@ -826,7 +818,6 @@ class AGV :
         while True:
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
-            self.deadManSwitch.trigger()
             key = self.keypad()
 
             if (key == '1') :
@@ -875,41 +866,37 @@ class AGV :
 
             if star_countdown == 0 :
                 await self.lcd.clear()
-                self.lcd.putline(1,"(pyAGV exit)")
+                self.lcd.putline(1," (pyAGV user exit)")
                 await asyncio.sleep(2)
                 return
 
     async def splash(self):
+        await self.lcd.startup()
         self.lcd.putline(1,"   pyAGV  v {:s}".format(self.__version__))
         self.lcd.putline(2," (any key to start)")
-        await self.keypad.keyPressed.wait()
-        self.keypad.keyPressed.clear()
 
-    async def run(self):
-        self.deadManSwitch.trigger()  # Regularly retrigger to stay running
-        await self.lcd.startup()
+    async def run(self,splashQuitTimeout=30):
         await self.splash()
-        await self.cmdloop()
-        self.exited.set() # User requested exit?
+        splashQuit = Delay_ms(duration=splashQuitTimeout*1000)
+        splashQuit.trigger()
+        event = await WaitAny((splashQuit,self.keypad.keyPressed)).wait()
+        event.clear()
+        if event is self.keypad.keyPressed :
+            await self.cmdloop()
+        else :
+            await self.lcd.clear()
+            self.lcd.putline(1,"       TIMEOUT")
+            self.lcd.putline(2,"    (pyAGV abort)")
+            await asyncio.sleep(2)
 
 # standalone test: remove from module version?
 
 async def main():
-    print("initialising agv obj...")
-    agv = AGV(deadManDelay=60*60) # 1 hour
-    print("starting up agv...")
-    agv_task = asyncio.create_task(agv.run())
-    print("awaiting exit event...")
-    event = await WaitAny((agv.exited, agv.deadManSwitch)).wait()
-    if event is agv.exited :
-        print("agv exit detected...")
-    elif event is agv.deadManSwitch:
-        print("deadManSwitch detected...")
-        await agv.lcd.clear()
-        agv.lcd.putline(0,"deadManSwitch!")
-        agv.lcd.putline(1,"(pyAGV abort)")
-    else :
-        print("exiting for no known reason? (CAN'T HAPPEN!)")
+    print("main: initialising agv obj...")
+    agv = AGV()
+    print("main: starting agv.run()...")
+    await agv.run(splashQuitTimeout=10)
+    print("agv.run() exit detected...")
 
 print("starting main()")
 asyncio.run(main())
