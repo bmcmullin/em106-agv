@@ -12,11 +12,11 @@ from primitives import Delay_ms, WaitAny, ESwitch
 
 from machine import Pin, I2C, PWM
 
-## from em106-AGV import nano33_pins
+## from em106-AGV import nano33Pins
 ## INLINE for test purposes
 # See nano33 pin mappings here:
 # https://docs.arduino.cc/tutorials/nano-33-ble/ble-python-api
-nano33_pins = {
+nano33Pins = {
     "A0" : 4,
     "A1" : 5,
     "A2" : 30,
@@ -47,140 +47,6 @@ nano33_pins = {
     "D19" : 2,
     "D20" : 28,
     "D21" : 3}
-
-
-## from em106-AGV import ESteerSensors
-## INLINE for test purposes
-#import uasyncio as asyncio
-#from machine import Pin
-#from primitives import Switch
-
-class EOptoSensors:
-
-    def __init__(self, left_pin_id = "A3", right_pin_id = "A2"):
-        # NB: may be *mounted* opposite way around...
-        # MCU allocates analog pins, but we use in digital mode only here as ESwitch devices:
-        # https://github.com/peterhinch/micropython-async/blob/master/v3/docs/EVENTS.md#61-eswitch
-        # External 4.7k phototransitor pullups present on MCU: don't
-        # activate internal pull up or down as well!
-        self.left_pin=Pin(nano33_pins[left_pin_id],Pin.IN, None)
-        self.left = ESwitch(self.left_pin)
-        self.right_pin=Pin(nano33_pins[right_pin_id],Pin.IN, None)
-        self.right = ESwitch(self.right_pin)
-
-class rcPWM:
-
-    # Set up to generate PWM signal suitable for RC ("remote control") type
-    # interface devices. Pulse frequency 50Hz. Pulse width varying from
-    # 1ms (-100%) to 1.5ms (0%) to 2ms (+100%).
-
-    # The current micropython nrf port has very poor/dysfunctional implementation
-    # of the hardware PWM. It specifically does NOT match the generic API documented
-    # for <machine.PWM>. Some (incomplete) discussion here:
-    # https://forums.openmv.io/t/unable-to-import-pwm-module-in-nano-33-ble-sense/7028
-    # The effect is that, every time we want to change the pulse width, we have to create
-    # a new PWM object. Yuk.
-
-    freq_hz = 50
-    clock_prescale = PWM.FREQ_125KHZ
-    clock_hz = 125000
-    top_counter = clock_hz // freq_hz
-    top_usec = (10**6)//freq_hz
-    count_1500usec = (1500*top_counter)//top_usec
-    count_500usec = ((500)*top_counter)//top_usec
-
-    def __init__(self, pin_id, nrf_pwm_id):
-        # NRF52840 has four independent PWM blocks, numbered 0-3
-        self.pin_id = pin_id
-        self.pin = Pin(nano33_pins[pin_id], mode=Pin.OUT)
-        self.nrf_pwm_id = nrf_pwm_id
-        self._pwm = None
-        self.percent = 0
-
-    @property
-    def percent(self):
-        return self._percent
-
-    @percent.setter
-    def percent(self, percent_value):
-        self._percent = percent_value
-        pulse_count = rcPWM.count_1500usec + (
-            (percent_value * rcPWM.count_500usec)//100)
-        if self._pwm is not None :
-            self._pwm.deinit() # Defensive: may not be necessary/useful?
-        self._pwm = PWM(self.nrf_pwm_id, pin=self.pin,
-            freq=rcPWM.clock_prescale, period=rcPWM.top_counter, pulse_width=pulse_count)
-        self._pwm.init()
-
-## from em106-AGV import EKeypad
-## INLINE for test purposes
-#import uasyncio as asyncio
-#from machine import Pin
-
-class EKeypad:
-    debounce_ms = 50
-    ROWS = 4
-    COLS = 4
-    hexaKeys = [
-      ['1', '2', '3', 'A'],
-      ['4', '5', '6', 'B'],
-      ['7', '8', '9', 'C'],
-      ['*', '0', '#', 'D']
-    ]
-
-    def __init__(self):
-        self.keyPressed = asyncio.Event()
-        self._key = None
-        self._rowPins = ['D12','D8','D7','D6'] # inputs
-        for row in range(EKeypad.ROWS) :
-            pin_num = nano33_pins[self._rowPins[row]]
-            self._rowPins[row] = Pin(pin_num, Pin.IN, Pin.PULL_DOWN)
-        self._colPins = ['D5','D4','D3','D2'] # outputs
-        for col in range(EKeypad.COLS) :
-            pin_num = nano33_pins[self._colPins[col]]
-            self._colPins[col] = Pin(pin_num, Pin.OUT)
-            self._colPins[col].low()
-        self.rowStates = [0, 0, 0, 0]
-        self.someKeyPressed = False
-        self.activeRow = None
-        self.activeCol = None
-
-        asyncio.create_task(self._poll())
-
-    def _readRows(self) :
-        self.someKeyPressed = False;
-        self.activeRow = None;
-        for row in range(EKeypad.ROWS) :
-            state = self._rowPins[row].value()
-            self.rowStates[row] = state
-            self.someKeyPressed = self.someKeyPressed or state
-            if(state) :
-                self.activeRow = row
-
-    async def _poll(self):
-        while True:
-            for col in range(EKeypad.COLS) :
-                self._colPins[col].high()
-                await asyncio.sleep_ms(1) # Wait for signal to settle
-                self._readRows()
-                if(self.someKeyPressed) :
-                    self.activeCol = col
-                    self._key = EKeypad.hexaKeys[self.activeRow][col]
-                    self.keyPressed.set() # Should be cleared by key handling task
-                    while(self.someKeyPressed) : # Wait for key release
-                        await asyncio.sleep_ms(1)
-                        self._readRows()
-                self._colPins[col].low()
-                await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
-
-    # ***** API *****
-    # Return last key pressed
-    def __call__(self):
-        return self._key
-
-    def deinit(self):
-        self._poll.cancel()
-        self.keyPressed.clear()
 
 ## from em106-AGV import as_lcd_api.py
 ## INLINE for test purposes
@@ -557,6 +423,139 @@ class I2cLcd(LcdApi):
         self.mcp.GPIO = bytes([byte | MASK_E])
         self.mcp.GPIO = bytes([byte])
 
+## from em106-AGV import ESteerSensors
+## INLINE for test purposes
+#import uasyncio as asyncio
+#from machine import Pin
+#from primitives import Switch
+
+class EOptoSensors:
+
+    def __init__(self, leftPinID = "A3", rightPinID = "A2"):
+        # NB: may be *mounted* opposite way around...
+        # MCU allocates analog pins, but we use in digital mode only here as ESwitch devices:
+        # https://github.com/peterhinch/micropython-async/blob/master/v3/docs/EVENTS.md#61-eswitch
+        # External 4.7k phototransitor pullups present on MCU: don't
+        # activate internal pull up or down as well!
+        self.leftPin=Pin(nano33Pins[leftPinID],Pin.IN, None)
+        self.left = ESwitch(self.leftPin)
+        self.rightPin=Pin(nano33Pins[rightPinID],Pin.IN, None)
+        self.right = ESwitch(self.rightPin)
+
+class rcPWM:
+
+    # Set up to generate PWM signal suitable for RC ("remote control") type
+    # interface devices. Pulse frequency 50Hz. Pulse width varying from
+    # 1ms (-100%) to 1.5ms (0%) to 2ms (+100%).
+
+    # The current micropython nrf port has very poor/dysfunctional implementation
+    # of the hardware PWM. It specifically does NOT match the generic API documented
+    # for <machine.PWM>. Some (incomplete) discussion here:
+    # https://forums.openmv.io/t/unable-to-import-pwm-module-in-nano-33-ble-sense/7028
+    # The effect is that, every time we want to change the pulse width, we have to create
+    # a new PWM object. Yuk.
+
+    freqHz = 50
+    clkPrescale = PWM.FREQ_125KHZ
+    clkHz = 125000
+    topCnt = clkHz // freqHz
+    top_usec = (10**6)//freqHz
+    count_1500usec = (1500*topCnt)//top_usec
+    count_500usec = ((500)*topCnt)//top_usec
+
+    def __init__(self, pinID, nrfPWM_ID):
+        # NRF52840 has four independent PWM blocks, numbered 0-3
+        self.pinID = pinID
+        self.pin = Pin(nano33Pins[pinID], mode=Pin.OUT)
+        self.nrfPWM_ID = nrfPWM_ID
+        self._pwm = None
+        self.percent = 0
+
+    @property
+    def percent(self):
+        return self._percent
+
+    @percent.setter
+    def percent(self, percentValue):
+        self._percent = percentValue
+        pulseCnt = rcPWM.count_1500usec + (
+            (percentValue * rcPWM.count_500usec)//100)
+        if self._pwm is not None :
+            self._pwm.deinit() # Defensive: may not be necessary/useful?
+        self._pwm = PWM(self.nrfPWM_ID, pin=self.pin,
+            freq=rcPWM.clkPrescale, period=rcPWM.topCnt, pulse_width=pulseCnt)
+        self._pwm.init()
+
+## from em106-AGV import EKeypad
+## INLINE for test purposes
+#import uasyncio as asyncio
+#from machine import Pin
+
+class EKeypad:
+    debounce_ms = 50
+    ROWS = 4
+    COLS = 4
+    hexaKeys = [
+      ['1', '2', '3', 'A'],
+      ['4', '5', '6', 'B'],
+      ['7', '8', '9', 'C'],
+      ['*', '0', '#', 'D']
+    ]
+
+    def __init__(self):
+        self.keyPressed = asyncio.Event()
+        self._key = None
+        self._rowPins = ['D12','D8','D7','D6'] # inputs
+        for row in range(EKeypad.ROWS) :
+            self._rowPins[row] = Pin(
+                nano33Pins[self._rowPins[row]], Pin.IN, pull=None)
+        self._colPins = ['D5','D4','D3','D2'] # outputs
+        for col in range(EKeypad.COLS) :
+            self._colPins[col] = Pin(
+                nano33Pins[self._colPins[col]], Pin.OUT)
+            self._colPins[col].low()
+        self.rowStates = [0, 0, 0, 0]
+        self.someKeyPressed = False
+        self.activeRow = None
+        self.activeCol = None
+
+        asyncio.create_task(self._poll())
+
+    def _readRows(self) :
+        self.someKeyPressed = False;
+        self.activeRow = None;
+        for row in range(EKeypad.ROWS) :
+            state = self._rowPins[row].value()
+            self.rowStates[row] = state
+            self.someKeyPressed = self.someKeyPressed or state
+            if(state) :
+                self.activeRow = row
+
+    async def _poll(self):
+        while True:
+            for col in range(EKeypad.COLS) :
+                self._colPins[col].high()
+                await asyncio.sleep_ms(1) # Wait for signal to settle
+                self._readRows()
+                if(self.someKeyPressed) :
+                    self.activeCol = col
+                    self._key = EKeypad.hexaKeys[self.activeRow][col]
+                    self.keyPressed.set() # Should be cleared by key handling task
+                    while(self.someKeyPressed) : # Wait for key release
+                        await asyncio.sleep_ms(1)
+                        self._readRows()
+                self._colPins[col].low()
+                await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
+
+    # ***** API *****
+    # Return last key pressed
+    def __call__(self):
+        return self._key
+
+    def deinit(self):
+        self._poll.cancel()
+        self.keyPressed.clear()
+
 ## from em106-AGV import AGV.py?
 ## INLINE for test purposes
 
@@ -566,7 +565,6 @@ class AGV :
 
     def __init__(self,splashQuitTimeout=30):
         self.__version__ = "0.1rc"
-        self.exited = asyncio.Event()
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
         self.I2C_ADDR = 0x20
@@ -578,7 +576,7 @@ class AGV :
         self.steerPWM = rcPWM("D10",0)
         self.tractionPWM = rcPWM("D11",1)
 
-    def update_duration(self,duration,key):
+    def updateDuration(self,duration,key):
         if key == 'A' :
             duration += 1
         elif key == 'B' :
@@ -592,7 +590,7 @@ class AGV :
             pass
         return duration
 
-    async def get_duration(self,prompt,duration) :
+    async def getDuration(self,prompt,duration) :
         await self.lcd.clear()
         self.lcd.putline(0,"{:s}:".format(prompt))
         self.lcd.putline(1,"{:4d} s".format(duration))
@@ -601,7 +599,7 @@ class AGV :
             self.keypad.keyPressed.clear()
             key = self.keypad()
             old_duration = duration
-            duration = self.update_duration(duration,key)
+            duration = self.updateDuration(duration,key)
             if duration != old_duration :
                 self.lcd.putline(1,"{:4d} s".format(duration))
             elif key == '*':
@@ -610,7 +608,7 @@ class AGV :
                 # ignore other key values
                 pass
 
-    def update_percent(self,percent,key):
+    def updatePercent(self,percent,key):
         if key == 'A' :
             percent = min(percent+1, 100)
         elif key == 'B' :
@@ -624,7 +622,7 @@ class AGV :
             pass
         return percent
 
-    async def get_percent(self, prompt, percent):
+    async def getPercent(self, prompt, percent):
         await self.lcd.clear()
         self.lcd.putline(0,"{:s} : ".format(prompt))
         self.lcd.putline(1,"{:4d}%".format(percent))
@@ -632,9 +630,9 @@ class AGV :
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
-            old_percent = percent
-            percent = self.update_percent(percent,key)
-            if percent != old_percent :
+            oldPercent = percent
+            percent = self.updatePercent(percent,key)
+            if percent != oldPercent :
                 self.lcd.putline(1,"{:4d}%".format(percent))
             elif key == '*':
                 return(percent)
@@ -642,47 +640,47 @@ class AGV :
                 # ignore other key values
                 pass
 
-    async def autoSteer(self, traction_percent, steer_gain, stopLineEvent) :
-        steer_map = [
+    async def autoSteer(self, tractionPercent, steerGain, stopLineEvent) :
+        steerMap = [
           [0, +1],
           [-1, 0]]
         left = self.optoSensors.left
         right = self.optoSensors.right
-        left_state = left()
-        right_state = right()
-        self.lcd.putline(3,"Left: {:d}   ".format(left_state))
-        self.lcd.putstr("Right: {:d}".format(right_state))
-        steer_percent = steer_map[left_state][right_state]*steer_gain
-        self.steerPWM.percent = steer_percent
-        self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
+        leftState = left()
+        rightState = right()
+        self.lcd.putline(3,"Left: {:d}   ".format(leftState))
+        self.lcd.putstr("Right: {:d}".format(rightState))
+        steerPercent = steerMap[leftState][rightState]*steerGain
+        self.steerPWM.percent = steerPercent
+        self.lcd.putline(2,"Steer: {:d}".format(steerPercent))
         while True :
             event = await WaitAny((
                 left.close, left.open,
                 right.close, right.open)).wait()
             event.clear()
-            left_state = left()
-            right_state = right()
-            self.lcd.putline(3,"Left: {:d}   ".format(left_state))
-            self.lcd.putstr("Right: {:d}".format(right_state))
-            steer_percent = steer_map[left_state][right_state]*steer_gain
-            self.steerPWM.percent = steer_percent
-            self.lcd.putline(2,"Steer: {:d}".format(steer_percent))
+            leftState = left()
+            rightState = right()
+            self.lcd.putline(3,"Left: {:d}   ".format(leftState))
+            self.lcd.putstr("Right: {:d}".format(rightState))
+            steerPercent = steerMap[leftState][rightState]*steerGain
+            self.steerPWM.percent = steerPercent
+            self.lcd.putline(2,"Steer: {:d}".format(steerPercent))
 
             if (left() == 1) and (right() == 1) : # STOP LINE
                 stopLineEvent.set()
                 self.steerPWM.percent = 0
                 return # Exit autoSteer
 
-    def lineTest(self,traction_percent=30,steer_gain=30) :
-        traction_percent = await self.get_percent("Line tst tract",traction_percent)
-        steer_gain = await self.get_percent("Line tst gain",steer_gain)
+    def lineTest(self,tractionPercent=30,steerGain=30) :
+        tractionPercent = await self.getPercent("Line tst tract",tractionPercent)
+        steerGain = await self.getPercent("Line tst gain",steerGain)
         await self.lcd.clear()
         self.lcd.putline(0,"Line test")
-        self.lcd.putline(1,"Running [{:d}, {:d}]".format(traction_percent,steer_gain))
+        self.lcd.putline(1,"Running [{:d}, {:d}]".format(tractionPercent,steerGain))
         stopLineEvent = asyncio.Event()
         autoSteerTask = asyncio.create_task(
-            self.autoSteer(traction_percent, steer_gain, stopLineEvent))
-        self.tractionPWM.percent = traction_percent
+            self.autoSteer(tractionPercent, steerGain, stopLineEvent))
+        self.tractionPWM.percent = tractionPercent
         event = await WaitAny((stopLineEvent,self.keypad.keyPressed)).wait()
         event.clear()
         self.tractionPWM.percent = 0
@@ -694,26 +692,26 @@ class AGV :
             autoSteerTask.cancel()
         await asyncio.sleep(2)
 
-    def turnTest(self,traction_percent=30,steer_gain=30) :
-        #traction_percent = await self.get_percent("Line tst tract",traction_percent)
-        #steer_gain = await self.get_percent("Line tst gain",traction_percent)
+    def turnTest(self,tractionPercent=30,steerGain=30) :
+        #tractionPercent = await self.getPercent("Line tst tract",tractionPercent)
+        #steerGain = await self.getPercent("Line tst gain",tractionPercent)
         await self.lcd.clear()
         self.lcd.putline(0,"Multi-pt turn test")
         self.lcd.putline(1,"NOT IMPLEMENTED")
         await asyncio.sleep(2)
         self.lcd.putline(2,"Exit...")
-        #self.lcd.putline(1,"Running [{:d}, {:d}]".format(traction_percent,steer_gain))
+        #self.lcd.putline(1,"Running [{:d}, {:d}]".format(tractionPercent,steerGain))
         await asyncio.sleep(2)
 
-    def circleTest(self,steer_percent=0,traction_percent=0,duration=10) :
-        steer_percent = await self.get_percent("Circ tst steer",steer_percent)
-        traction_percent = await self.get_percent("Circ tst tract",traction_percent)
-        duration = await self.get_duration("Circ tst duration",duration)
+    def circleTest(self,steerPercent=0,tractionPercent=0,duration=10) :
+        steerPercent = await self.getPercent("Circ tst steer",steerPercent)
+        tractionPercent = await self.getPercent("Circ tst tract",tractionPercent)
+        duration = await self.getDuration("Circ tst duration",duration)
         await self.lcd.clear()
         self.lcd.putline(0,"Circle Test")
         self.lcd.putline(1,"Running...")
-        self.steerPWM.percent = steer_percent
-        self.tractionPWM.percent = traction_percent
+        self.steerPWM.percent = steerPercent
+        self.tractionPWM.percent = tractionPercent
         delay = Delay_ms(duration=duration*1000)
         delay.trigger()
         event = await WaitAny((delay,self.keypad.keyPressed)).wait()
@@ -735,9 +733,9 @@ class AGV :
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
-            old_percent = percent
-            percent = self.update_percent(percent,key)
-            if percent != old_percent :
+            oldPercent = percent
+            percent = self.updatePercent(percent,key)
+            if percent != oldPercent :
                 self.lcd.putline(0,"{:s} test: {:4d}%".format(pwmname,percent))
                 pwm.percent = percent
             elif key == '*' :
@@ -752,20 +750,20 @@ class AGV :
     async def optoSensorTest(self):
         await self.lcd.clear()
         self.lcd.putline(0,"optosensors: test")
-        left_state = self.optoSensors.left()
-        self.lcd.putline(1,"Left:  {:d}".format(left_state))
-        right_state = self.optoSensors.right()
-        self.lcd.putline(2,"Right: {:d}".format(right_state))
+        leftState = self.optoSensors.left()
+        self.lcd.putline(1,"Left:  {:d}".format(leftState))
+        rightState = self.optoSensors.right()
+        self.lcd.putline(2,"Right: {:d}".format(rightState))
         while True :
             event = await WaitAny((
                 self.optoSensors.left.close, self.optoSensors.left.open,
                 self.optoSensors.right.close, self.optoSensors.right.open,
                 self.keypad.keyPressed)).wait()
             event.clear()
-            left_state = self.optoSensors.left()
-            self.lcd.putline(1,"Left:  {:d}".format(left_state))
-            right_state = self.optoSensors.right()
-            self.lcd.putline(2,"Right: {:d}".format(right_state))
+            leftState = self.optoSensors.left()
+            self.lcd.putline(1,"Left:  {:d}".format(leftState))
+            rightState = self.optoSensors.right()
+            self.lcd.putline(2,"Right: {:d}".format(rightState))
             if event is self.keypad.keyPressed :
                 self.lcd.putline(0,"optosensors: exit...")
                 await asyncio.sleep(2)
@@ -774,47 +772,47 @@ class AGV :
                 # Can't happen: should really raise an exception?
                 pass
 
-    def display_key_press(self, star_countdown):
+    def displayKeyPress(self, starCountdown):
         self.lcd.move_to(14,0)
         self.lcd.putline(0,"Keypad test:")
         self.lcd.putline(1,"activeRow: {:d}".format(self.keypad.activeRow))
         self.lcd.putline(2,"activeCol: {:d}".format(self.keypad.activeCol))
         self.lcd.putline(3,'key code: "{:s}"'.format(self.keypad()))
         self.lcd.move_to(14,3)
-        self.lcd.putstr("[*: {:d}]".format(star_countdown))
+        self.lcd.putstr("[*: {:d}]".format(starCountdown))
 
     async def keypadTest(self):
-        star_countdown = 3
+        starCountdown = 3
         await self.lcd.clear()
         self.lcd.putline(0,"Keypad test:")
         self.lcd.move_to(14,3)
-        self.lcd.putstr("[*: {:d}]".format(star_countdown))
+        self.lcd.putstr("[*: {:d}]".format(starCountdown))
         while True :
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
             key = self.keypad()
             if key == '*' :
-                star_countdown -= 1
+                starCountdown -= 1
             else :
-                star_countdown = 3
-            self.display_key_press(star_countdown)
-            if star_countdown == 0 :
+                starCountdown = 3
+            self.displayKeyPress(starCountdown)
+            if starCountdown == 0 :
                 self.lcd.putline(0,"keypad test: exit...")
                 await asyncio.sleep(2)
                 return
 
-    async def display_main_menu(self, star_countdown):
+    async def displayMainMenu(self, starCountdown):
         await self.lcd.clear()
         self.lcd.putline(0,"1: keypad 2: opto")
         self.lcd.putline(1,"3: servo  4: tract")
         self.lcd.putline(2,"5: circle 6: line")
         self.lcd.putline(3,"7: turn")
         self.lcd.move_to(14,3)
-        self.lcd.putstr("[*: {:d}]".format(star_countdown))
+        self.lcd.putstr("[*: {:d}]".format(starCountdown))
 
     async def cmdloop(self):
-        star_countdown = 3
-        await self.display_main_menu(star_countdown)
+        starCountdown = 3
+        await self.displayMainMenu(starCountdown)
         while True:
             await self.keypad.keyPressed.wait()
             self.keypad.keyPressed.clear()
@@ -822,49 +820,49 @@ class AGV :
 
             if (key == '1') :
                 await self.keypadTest()
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '2') :
                 await self.optoSensorTest()
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '3') :
                 await self.pwmTest("servo",self.steerPWM)
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '4') :
                 await self.pwmTest("tract",self.tractionPWM)
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '5') :
                 await self.circleTest()
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '6') :
                 await self.lineTest()
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '7') :
                 await self.turnTest()
-                star_countdown = 3
-                await self.display_main_menu(star_countdown)
+                starCountdown = 3
+                await self.displayMainMenu(starCountdown)
             elif (key == '*') :
-                star_countdown -= 1
+                starCountdown -= 1
                 self.lcd.move_to(14,3)
-                self.lcd.putstr("[*: {:d}]".format(star_countdown))
+                self.lcd.putstr("[*: {:d}]".format(starCountdown))
                 self.lcd.move_to(0,3)
                 self.lcd.putstr("            ".format(key))
             else :
                 self.lcd.move_to(0,3)
                 self.lcd.putstr("{:s}: not valid".format(key))
-                star_countdown = 3
+                starCountdown = 3
                 self.lcd.move_to(14,3)
-                self.lcd.putstr("[*: {:d}]".format(star_countdown))
+                self.lcd.putstr("[*: {:d}]".format(starCountdown))
                 await asyncio.sleep(2)
                 self.lcd.move_to(0,3)
                 self.lcd.putstr("7: turns    ")
 
-            if star_countdown == 0 :
+            if starCountdown == 0 :
                 await self.lcd.clear()
                 self.lcd.putline(1," (pyAGV user exit)")
                 await asyncio.sleep(2)
