@@ -529,8 +529,13 @@ class EKeypad:
         for row in range(EKeypad.ROWS) :
             state = self._rowPins[row].value()
             if(state) :
-                await asyncio.sleep_ms(5) # noise reduction
-                state = state and self._rowPins[row].value()
+                await asyncio.sleep_ms(EKeypad.debounce_ms)
+                    # noise reduction: must *stay* active for this time or be discarded
+                state = self._rowPins[row].value()
+                # Uncomment to show rejected transient key activations...
+                #if not state :
+                    #print("keypad transient rejected [row: {:d} col: {:d} key: {:s}!".format(
+                        #row, self.activeCol, EKeypad.hexaKeys[row][self.activeCol]))
             self.rowStates[row] = state
             if (state) :
                 self.activeRow = row
@@ -541,16 +546,18 @@ class EKeypad:
             for col in range(EKeypad.COLS) :
                 #self._colPins[col].init(mode=Pin.OUT)
                 self._colPins[col].high()
+                self.activeCol = col
                 await asyncio.sleep_ms(1) # Wait for signal to settle
                 await self._readRows()
                 if(self.someKeyPressed) :
-                    self.activeCol = col
-                    self._key = EKeypad.hexaKeys[self.activeRow][col]
+                    self._key = EKeypad.hexaKeys[self.activeRow][self.activeCol]
                     while(self.someKeyPressed) : # Wait for key release
                         await asyncio.sleep_ms(1)
-                        await self._readRows()
+                        self.someKeyPressed = self._rowPins[self.activeRow].value()
+                        #await self._readRows()
                     self.keyPressed.set() # Should be cleared by key handling task
                 self._colPins[col].low()
+                #self.activeCol = None
                 #self._colPins[col].init(mode=Pin.IN,pull=None)
                 await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
 
