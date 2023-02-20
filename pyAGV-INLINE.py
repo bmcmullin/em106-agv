@@ -525,11 +525,11 @@ class EKeypad:
 
     async def _readRows(self) :
         self.someKeyPressed = False;
-        self.activeRow = None;
+        #self.activeRow = None;
         for row in range(EKeypad.ROWS) :
             state = self._rowPins[row].value()
             if(state) :
-                await asyncio.sleep_ms(1) # noise reduction
+                await asyncio.sleep_ms(5) # noise reduction
                 state = state and self._rowPins[row].value()
             self.rowStates[row] = state
             if (state) :
@@ -546,10 +546,10 @@ class EKeypad:
                 if(self.someKeyPressed) :
                     self.activeCol = col
                     self._key = EKeypad.hexaKeys[self.activeRow][col]
-                    self.keyPressed.set() # Should be cleared by key handling task
                     while(self.someKeyPressed) : # Wait for key release
                         await asyncio.sleep_ms(1)
                         await self._readRows()
+                    self.keyPressed.set() # Should be cleared by key handling task
                 self._colPins[col].low()
                 #self._colPins[col].init(mode=Pin.IN,pull=None)
                 await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
@@ -571,7 +571,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,splashQuitTimeout=30):
-        self.__version__ = "0.1dev"
+        self.__version__ = "0.02dev"
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
         self.I2C_ADDR = 0x20
