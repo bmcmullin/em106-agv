@@ -523,15 +523,18 @@ class EKeypad:
 
         asyncio.create_task(self._poll())
 
-    def _readRows(self) :
+    async def _readRows(self) :
         self.someKeyPressed = False;
         self.activeRow = None;
         for row in range(EKeypad.ROWS) :
             state = self._rowPins[row].value()
-            self.rowStates[row] = state
-            self.someKeyPressed = self.someKeyPressed or state
             if(state) :
+                await asyncio.sleep_ms(1) # noise reduction
+                state = state and self._rowPins[row].value()
+            self.rowStates[row] = state
+            if (state) :
                 self.activeRow = row
+            self.someKeyPressed = self.someKeyPressed or state
 
     async def _poll(self):
         while True:
@@ -539,14 +542,14 @@ class EKeypad:
                 #self._colPins[col].init(mode=Pin.OUT)
                 self._colPins[col].high()
                 await asyncio.sleep_ms(1) # Wait for signal to settle
-                self._readRows()
+                await self._readRows()
                 if(self.someKeyPressed) :
                     self.activeCol = col
                     self._key = EKeypad.hexaKeys[self.activeRow][col]
                     self.keyPressed.set() # Should be cleared by key handling task
                     while(self.someKeyPressed) : # Wait for key release
                         await asyncio.sleep_ms(1)
-                        self._readRows()
+                        await self._readRows()
                 self._colPins[col].low()
                 #self._colPins[col].init(mode=Pin.IN,pull=None)
                 await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
