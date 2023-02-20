@@ -512,7 +512,8 @@ class EKeypad:
         self._colPins = ['D5','D4','D3','D2'] # outputs
         for col in range(EKeypad.COLS) :
             self._colPins[col] = Pin(
-                nano33Pins[self._colPins[col]], Pin.OUT)
+                nano33Pins[self._colPins[col]], Pin.IN, pull=None)
+                # leave as hi-impedance by default
             self._colPins[col].low()
         self.rowStates = [0, 0, 0, 0]
         self.someKeyPressed = False
@@ -534,6 +535,7 @@ class EKeypad:
     async def _poll(self):
         while True:
             for col in range(EKeypad.COLS) :
+                self._colPins[col].init(mode=Pin.OUT)
                 self._colPins[col].high()
                 await asyncio.sleep_ms(1) # Wait for signal to settle
                 self._readRows()
@@ -545,6 +547,7 @@ class EKeypad:
                         await asyncio.sleep_ms(1)
                         self._readRows()
                 self._colPins[col].low()
+                self._colPins[col].init(mode=Pin.IN,pull=None)
                 await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
 
     # ***** API *****
