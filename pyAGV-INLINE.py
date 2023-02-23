@@ -517,14 +517,14 @@ class EKeypad:
                 nano33Pins[self._colPins[col]], Pin.OUT)
             self._colPins[col].low()
         self.rowStates = [0, 0, 0, 0]
-        self.someKeyPressed = False
+        self._someKeyPressed = False
         self.activeRow = None
         self.activeCol = None
 
         asyncio.create_task(self._poll())
 
     async def _readRows(self) :
-        self.someKeyPressed = False;
+        self._someKeyPressed = False;
         #self.activeRow = None;
         for row in range(EKeypad.ROWS) :
             state = self._rowPins[row].value()
@@ -539,7 +539,7 @@ class EKeypad:
             self.rowStates[row] = state
             if (state) :
                 self.activeRow = row
-            self.someKeyPressed = self.someKeyPressed or state
+            self._someKeyPressed = self._someKeyPressed or state
 
     async def _poll(self):
         while True:
@@ -549,12 +549,12 @@ class EKeypad:
                 self.activeCol = col
                 await asyncio.sleep_ms(1) # Wait for signal to settle
                 await self._readRows()
-                if(self.someKeyPressed) :
-                    self.keyPressed.set() # Should be cleared by key handling task
+                if(self._someKeyPressed) :
                     self._key = EKeypad.hexaKeys[self.activeRow][self.activeCol]
-                    while(self.someKeyPressed) : # Wait for key release
+                    self.keyPressed.set() # Should be cleared by key handling task
+                    while(self._someKeyPressed) : # Wait for key release
                         await asyncio.sleep_ms(1)
-                        self.someKeyPressed = self._rowPins[self.activeRow].value()
+                        self._someKeyPressed = self._rowPins[self.activeRow].value()
                         #await self._readRows()
                 self._colPins[col].low()
                 #self.activeCol = None
@@ -578,7 +578,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,splashQuitTimeout=30):
-        self.__version__ = "0.03rc"
+        self.__version__ = "0.03dev"
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
         self.I2C_ADDR = 0x20
