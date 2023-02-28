@@ -492,7 +492,6 @@ class rcPWM:
 #from machine import Pin
 
 class EKeypad:
-    debounce_ms = 50
     ROWS = 4
     COLS = 4
     hexaKeys = [
@@ -502,7 +501,8 @@ class EKeypad:
       ['*', '0', '#', 'D']
     ]
 
-    def __init__(self):
+    def __init__(self, debounce_ms = 20):
+        self.debounce_ms = debounce_ms
         self.keyPressed = asyncio.Event()
         self._key = None
         self._rowPins = ['D12','D8','D7','D6'] # inputs
@@ -529,7 +529,7 @@ class EKeypad:
         for row in range(EKeypad.ROWS) :
             state = self._rowPins[row].value()
             if(state) :
-                await asyncio.sleep_ms(EKeypad.debounce_ms)
+                await asyncio.sleep_ms(self.debounce_ms)
                     # noise reduction: must *stay* active for this time or be discarded
                 state = self._rowPins[row].value()
                 # Uncomment to show rejected transient key activations...
@@ -555,11 +555,10 @@ class EKeypad:
                     while(self._someKeyPressed) : # Wait for key release
                         await asyncio.sleep_ms(1)
                         self._someKeyPressed = self._rowPins[self.activeRow].value()
-                        #await self._readRows()
                 self._colPins[col].low()
                 #self.activeCol = None
                 #self._colPins[col].init(mode=Pin.IN,pull=None)
-                await asyncio.sleep_ms(EKeypad.debounce_ms)  # Wait out bounce
+                await asyncio.sleep_ms(self.debounce_ms)  # Wait out bounce
 
     # ***** API *****
     # Return last key pressed
@@ -578,7 +577,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,splashQuitTimeout=30):
-        self.__version__ = "0.03dev"
+        self.__version__ = "0.04rc"
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
         self.I2C_ADDR = 0x20
