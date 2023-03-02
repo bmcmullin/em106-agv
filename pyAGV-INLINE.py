@@ -439,8 +439,10 @@ class EOptoSensors:
         # activate internal pull up or down as well!
         self.leftPin=Pin(nano33Pins[leftPinID],Pin.IN, None)
         self.left = ESwitch(self.leftPin)
+        self.left.debounce_ms = 5
         self.rightPin=Pin(nano33Pins[rightPinID],Pin.IN, None)
         self.right = ESwitch(self.rightPin)
+        self.right.debounce_ms = 5
 
 class rcPWM:
 
@@ -580,6 +582,7 @@ class AGV :
         self.__version__ = "0.04rc"
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
+        self.optoSensorStates = {}
         self.I2C_ADDR = 0x20
         self.LCD_ROWS = 4
         self.LCD_COLS = 20
@@ -653,56 +656,139 @@ class AGV :
                 # ignore other key values
                 pass
 
+    def updateBool(self,value,key):
+        if key == 'A' :
+            value = not value
+        return value
+
+    async def getBool(self, prompt, value):
+        await self.lcd.clear()
+        self.lcd.putline(0,"{:s} : ".format(prompt))
+        self.lcd.putline(1,"{:5s}".format(str(value)))
+        while True :
+            await self.keypad.keyPressed.wait()
+            self.keypad.keyPressed.clear()
+            key = self.keypad()
+            oldValue = value
+            value = self.updateBool(value,key)
+            if value != oldValue :
+                self.lcd.putline(1,"{:5s}".format(str(value)))
+            elif key == '*':
+                return(value)
+            else :
+                # ignore other key values
+                pass
+
+    def latchOptoSensorStates(self) :
+        self.optoSensorStates['left'] = self.optoSensors.left()
+        self.lcd.putline(3,"Left: {:d}   ".format(self.optoSensorStates['left']))
+        self.optoSensorStates['right'] = self.optoSensors.right()
+        self.lcd.putstr("Right: {:d}".format(self.optoSensorStates['right']))
+
+    async def autoCapture(self, tractionPercent, steerGain, captureEvent, stopLineEvent) :
+        # Implement line capture, *assuming* both sensors are initially fully
+        # to left *or* right of line (but don't know which) and steering straight will
+        # encounter line at shallow enough angle to then transition directly
+        # to autoSteer()/line following.
+        #
+        # tractionPercent and steerGain are passed in for possible *future* use to
+        # modulate the algorithm here. For the moment however, they are ignored.
+        steerPercent = 0
+        self.steerPWM.percent = steerPercent
+        self.lcd.putline(2,"Steer: {:d}".format(steerPercent))
+        self.latchOptoSensorStates()
+        while (not self.optoSensorStates['left']) and (not self.optoSensorStates['right']) :
+            event = await WaitAny((
+                self.optoSensors.left.close, self.optoSensors.left.open,
+                self.optoSensors.right.close, self.optoSensors.right.open)).wait()
+            event.clear()
+            self.latchOptoSensorStates()
+        if (self.optoSensorStates['left'] and self.optoSensorStates['right']) : # STOP LINE
+            stopLineEvent.set()
+            return # Exit autoCapture
+        elif self.optoSensorStates['left'] :
+            waitSensor = 'left'
+            #steerPercent = steerGain // 2# Assume we will overshoot
+        else :
+            waitSensor = 'right'
+            #steerPercent = -steerGain // 2 # Assume we will overshoot
+        self.lcd.putline(2,"Steer: {:d}".format(steerPercent))
+        self.steerPWM.percent = steerPercent
+        while (self.optoSensorStates[waitSensor]) : # keep updating the state display
+            event = await WaitAny((
+                self.optoSensors.left.close, self.optoSensors.left.open,
+                self.optoSensors.right.close, self.optoSensors.right.open)).wait()
+            event.clear()
+            self.latchOptoSensorStates()
+        captureEvent.set()
+
     async def autoSteer(self, tractionPercent, steerGain, stopLineEvent) :
+        # tractionPercent is passed in for possible *future* use to
+        # modulate the algorithm here. For the moment however, it is ignored.
         steerMap = [
           [0, +1],
           [-1, 0]]
-        left = self.optoSensors.left
-        right = self.optoSensors.right
-        leftState = left()
-        rightState = right()
-        self.lcd.putline(3,"Left: {:d}   ".format(leftState))
-        self.lcd.putstr("Right: {:d}".format(rightState))
-        steerPercent = steerMap[leftState][rightState]*steerGain
+        self.latchOptoSensorStates()
+        steerPercent = (steerMap[self.optoSensorStates['left']]
+            [self.optoSensorStates['right']]
+            * steerGain)
         self.steerPWM.percent = steerPercent
         self.lcd.putline(2,"Steer: {:d}".format(steerPercent))
-        while True :
+        while not (self.optoSensorStates['left'] and self.optoSensorStates['right']) :
             event = await WaitAny((
-                left.close, left.open,
-                right.close, right.open)).wait()
+                self.optoSensors.left.close, self.optoSensors.left.open,
+                self.optoSensors.right.close, self.optoSensors.right.open)).wait()
             event.clear()
-            leftState = left()
-            rightState = right()
-            self.lcd.putline(3,"Left: {:d}   ".format(leftState))
-            self.lcd.putstr("Right: {:d}".format(rightState))
-            steerPercent = steerMap[leftState][rightState]*steerGain
+            self.latchOptoSensorStates()
+            steerPercent = (steerMap[self.optoSensorStates['left']]
+                [self.optoSensorStates['right']]
+                * steerGain)
             self.steerPWM.percent = steerPercent
             self.lcd.putline(2,"Steer: {:d}".format(steerPercent))
+        # STOP LINE - exit autoSteer
+        stopLineEvent.set()
 
-            if (left() == 1) and (right() == 1) : # STOP LINE
-                stopLineEvent.set()
-                self.steerPWM.percent = 0
-                return # Exit autoSteer
-
-    def lineTest(self,tractionPercent=30,steerGain=30) :
+    def lineTest(self,capture=False,tractionPercent=20,steerGain=30) :
+        capture = await self.getBool("Line tst capture",capture)
         tractionPercent = await self.getPercent("Line tst tract",tractionPercent)
         steerGain = await self.getPercent("Line tst gain",steerGain)
         await self.lcd.clear()
         self.lcd.putline(0,"Line test")
-        self.lcd.putline(1,"Running [{:d}, {:d}]".format(tractionPercent,steerGain))
+        self.lcd.putline(1,"[{:d}, {:d}]".format(tractionPercent,steerGain))
+        if capture :
+            self.lcd.move_to(10,1)
+            self.lcd.putstr(" (capture)")
         stopLineEvent = asyncio.Event()
+        self.tractionPWM.percent = tractionPercent
+        if capture :
+            captureEvent = asyncio.Event()
+            autoCaptureTask = asyncio.create_task(
+                self.autoCapture(tractionPercent, steerGain, captureEvent, stopLineEvent))
+            event = await WaitAny((stopLineEvent,captureEvent,self.keypad.keyPressed)).wait()
+            event.clear()
+            autoCaptureTask.cancel()
+            if event is not captureEvent :
+                self.steerPWM.percent = 0
+                self.tractionPWM.percent = 0
+                if event is stopLineEvent :
+                    self.lcd.putline(1,"STOP LINE")
+                else :
+                    self.lcd.putline(3,"Aborted by key!")
+                await asyncio.sleep(2)
+                return
+        self.lcd.move_to(10,1)
+        self.lcd.putstr(" (follow) ")
         autoSteerTask = asyncio.create_task(
             self.autoSteer(tractionPercent, steerGain, stopLineEvent))
-        self.tractionPWM.percent = tractionPercent
         event = await WaitAny((stopLineEvent,self.keypad.keyPressed)).wait()
         event.clear()
+        autoSteerTask.cancel()
+        self.steerPWM.percent = 0
         self.tractionPWM.percent = 0
         if event is stopLineEvent :
-            self.lcd.putline(1,"Completed...")
+            self.lcd.putline(1,"STOP LINE")
         else :
             self.lcd.putline(3,"Aborted by key!")
-            self.steerPWM.percent = 0
-            autoSteerTask.cancel()
         await asyncio.sleep(2)
 
     def turnTest(self,tractionPercent=30,steerGain=30) :
