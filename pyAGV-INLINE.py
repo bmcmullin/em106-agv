@@ -791,24 +791,7 @@ class AGV :
             self.lcd.putline(3,"Aborted by key!")
         await asyncio.sleep(2)
 
-    def turnTest(self,tractionPercent=30,steerGain=30) :
-        #tractionPercent = await self.getPercent("Line tst tract",tractionPercent)
-        #steerGain = await self.getPercent("Line tst gain",tractionPercent)
-        await self.lcd.clear()
-        self.lcd.putline(0,"Multi-pt turn test")
-        self.lcd.putline(1,"NOT IMPLEMENTED")
-        await asyncio.sleep(2)
-        self.lcd.putline(2,"Exit...")
-        #self.lcd.putline(1,"Running [{:d}, {:d}]".format(tractionPercent,steerGain))
-        await asyncio.sleep(2)
-
-    def circleTest(self,steerPercent=0,tractionPercent=0,duration=10) :
-        steerPercent = await self.getPercent("Circ tst steer",steerPercent)
-        tractionPercent = await self.getPercent("Circ tst tract",tractionPercent)
-        duration = await self.getDuration("Circ tst duration",duration)
-        await self.lcd.clear()
-        self.lcd.putline(0,"Circle Test")
-        self.lcd.putline(1,"Running...")
+    async def arcSegment(self,tractionPercent,steerPercent,duration,arcEvent) :
         self.steerPWM.percent = steerPercent
         self.tractionPWM.percent = tractionPercent
         delay = Delay_ms(duration=duration*1000)
@@ -817,7 +800,49 @@ class AGV :
         event.clear()
         self.tractionPWM.percent = 0
         self.steerPWM.percent = 0
-        if event is delay :
+        arcEvent.set()
+
+    async def turnTest(self,tractionPercent=30,steerPercent=60,duration=3) :
+        tractionPercent = await self.getPercent("Turn tst tract",tractionPercent)
+        steerPrecent = await self.getPercent("Turn tst steer",steerPercent)
+        duration = await self.getDuration("Turn tst duration",duration)
+        await self.lcd.clear()
+        self.lcd.putline(0,"Multi-pt turn test")
+        #self.lcd.putline(1,"NOT IMPLEMENTED")
+        #self.lcd.putline(2,"Exiting...")
+        self.lcd.putline(1,"Running [{:d}, {:d}]".format(tractionPercent,steerPercent))
+        arcEvent = asyncio.Event()
+        arcSegmentTask = asyncio.create_task(
+            self.arcSegment(-tractionPercent, steerPercent, duration, arcEvent))
+        event = await WaitAny((arcEvent,self.keypad.keyPressed)).wait()
+        event.clear()
+        arcSegmentTask.cancel() # in case of key press
+        if event is arcEvent :
+            arcSegmentTask = asyncio.create_task(
+                self.arcSegment(tractionPercent, -steerPercent, duration, arcEvent))
+            event = await WaitAny((arcEvent,self.keypad.keyPressed)).wait()
+            event.clear()
+            arcSegmentTask.cancel() # in case of key press
+        if event is arcEvent :
+            self.lcd.putline(1,"Completed...")
+        else :
+            self.lcd.putline(1,"Aborted by key!")
+        await asyncio.sleep(2)
+
+    async def circleTest(self,tractionPercent=0,steerPercent=0,duration=10) :
+        tractionPercent = await self.getPercent("Circ tst tract",tractionPercent)
+        steerPercent = await self.getPercent("Circ tst steer",steerPercent)
+        duration = await self.getDuration("Circ tst duration",duration)
+        await self.lcd.clear()
+        self.lcd.putline(0,"Circle Test")
+        self.lcd.putline(1,"Running...")
+        arcEvent = asyncio.Event()
+        arcSegmentTask = asyncio.create_task(
+            self.arcSegment(tractionPercent, steerPercent, duration, arcEvent))
+        event = await WaitAny((arcEvent,self.keypad.keyPressed)).wait()
+        event.clear()
+        arcSegmentTask.cancel() # in case of key press
+        if event is arcEvent :
             self.lcd.putline(1,"Completed...")
         else :
             self.lcd.putline(1,"Aborted by key!")
