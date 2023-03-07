@@ -579,7 +579,7 @@ class AGV :
     # Encapsulates standard EM106 nano33 MCU devices and functionality.
 
     def __init__(self,splashQuitTimeout=30):
-        self.__version__ = "0.04rc"
+        self.__version__ = "0.04dev"
         self.keypad = EKeypad()
         self.optoSensors = EOptoSensors()
         self.optoSensorStates = {}
@@ -1017,7 +1017,7 @@ async def main():
     print("main: initialising agv obj...")
     agv = AGV()
     print("main: starting agv.run()...")
-    await agv.run(splashQuitTimeout=10)
+    await agv.run(splashQuitTimeout=30)
     print("agv.run() exit detected...")
 
 print("starting main()")
